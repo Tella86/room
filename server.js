@@ -3,16 +3,16 @@ const https = require('https');
 const WebSocket = require('ws');  // Import WebSocket module
 
 // Load SSL certificate and key
-// let server;
-// try {
-//   server = https.createServer({
-//     cert: fs.readFileSync('./ssl/cert/healthtech_ezems_co_ke_baa55_5242b_1731176486_c36e87c648e3e21884f0ee55cf4dccf0.crt'),
-//     key: fs.readFileSync('./ssl/key/baa55_5242b_bf8e9894422095c536bee80d3142b0db.key')
-//   });
-// } catch (err) {
-//   console.error('Failed to load SSL files:', err);
-//   process.exit(1);  // Exit if SSL files cannot be loaded
-// }
+let server;
+try {
+  server = https.createServer({
+    cert: fs.readFileSync('./ssl/cert/healthtech_ezems_co_ke_baa55_5242b_1731176486_c36e87c648e3e21884f0ee55cf4dccf0.crt'),
+    key: fs.readFileSync('./ssl/key/baa55_5242b_bf8e9894422095c536bee80d3142b0db.key')
+  });
+} catch (err) {
+  console.error('Failed to load SSL files:', err);
+  process.exit(1);  // Exit if SSL files cannot be loaded
+}
 
 // Error handling for the server
 server.on('error', (err) => {

@@ -1,12 +1,18 @@
 const fs = require('fs');
 const https = require('https');
-const WebSocket = require('ws');
+const WebSocket = require('ws');  // Import WebSocket module
 
 // Load SSL certificate and key
-const server = https.createServer({
-  cert: fs.readFileSync('/home/ezemscok/ssl/cert/healthtech_ezems_co_ke_baa55_5242b_1731176486_c36e87c648e3e21884f0ee55cf4dccf0.crt'),
-  key: fs.readFileSync('/home/ezemscok/ssl/key/baa55_5242b_bf8e9894422095c536bee80d3142b0db.key')
-});
+// let server;
+// try {
+//   server = https.createServer({
+//     cert: fs.readFileSync('./ssl/cert/healthtech_ezems_co_ke_baa55_5242b_1731176486_c36e87c648e3e21884f0ee55cf4dccf0.crt'),
+//     key: fs.readFileSync('./ssl/key/baa55_5242b_bf8e9894422095c536bee80d3142b0db.key')
+//   });
+// } catch (err) {
+//   console.error('Failed to load SSL files:', err);
+//   process.exit(1);  // Exit if SSL files cannot be loaded
+// }
 
 // Error handling for the server
 server.on('error', (err) => {
@@ -30,9 +36,12 @@ wss.on('connection', (ws) => {
 
   // Handle incoming messages from clients
   ws.on('message', (message) => {
+    console.log('Received:', message);  // Print the received message
+
     let data;
     try {
       data = JSON.parse(message);
+      console.log('Parsed message data:', data);  // Print the parsed data
     } catch (err) {
       console.error('Invalid message format:', message);
       return;
@@ -42,16 +51,20 @@ wss.on('connection', (ws) => {
       case 'join':
         // Store client and room ID in the map
         clients.set(ws, data.room_id);
+        console.log(`Client joined room: ${data.room_id}`);
         break;
       case 'message':
+        console.log(`Broadcasting message in room ${data.room_id}: ${data.content}`);
         // Broadcast message to all clients in the same room
         broadcast(data, ws);
         break;
       case 'delete':
+        console.log(`Broadcasting delete in room ${data.room_id}`);
         // Broadcast delete message to all clients in the same room
         broadcastDelete(data, ws);
         break;
       case 'audio':
+        console.log(`Broadcasting audio in room ${data.room_id}`);
         // Broadcast audio message to all clients in the same room
         broadcastAudio(data, ws);
         break;
@@ -73,6 +86,7 @@ function broadcast(data, sender) {
   clients.forEach((roomId, client) => {
     if (client !== sender && roomId === data.room_id) {
       client.send(JSON.stringify(data));
+      console.log('Sent message to client:', data);
     }
   });
 }
@@ -82,6 +96,7 @@ function broadcastDelete(data, sender) {
   clients.forEach((roomId, client) => {
     if (roomId === data.room_id) {
       client.send(JSON.stringify(data));
+      console.log('Sent delete message to client:', data);
     }
   });
 }
@@ -91,6 +106,7 @@ function broadcastAudio(data, sender) {
   clients.forEach((roomId, client) => {
     if (roomId === data.room_id) {
       client.send(JSON.stringify(data));
+      console.log('Sent audio message to client:', data);
     }
   });
 }

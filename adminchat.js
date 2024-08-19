@@ -1,286 +1,117 @@
-document.addEventListener("DOMContentLoaded", () => {
-    const messageForm = document.getElementById("message-form");
-    const chatBox = document.getElementById("chat-box");
-    const roomSelect = document.getElementById("room-select");
-    const recordButton = document.getElementById("record-button");
-    const ws = new WebSocket('wss://ezems.co.ke:8080');
-    const userId = document.body.getAttribute('data-user-id');
-    let mediaRecorder;
-    let audioChunks = [];
+const fs = require('fs');
+const https = require('https');
+const WebSocket = require('ws');  // Import WebSocket module
 
-    // Initialize Howler.js
-    var sound = new Howl({
-        src: ['../hms/admin/assets/ezems.wav'], // Ensure this path is correct
-        autoplay: false,
-        loop: false,
-        volume: 1.0
-    });
+// Load SSL certificate and key
+let server;
+try {
+  server = https.createServer({
+    cert: fs.readFileSync('/home/ezemscok/ssl/cert/healthtech_ezems_co_ke_baa55_5242b_1731176486_c36e87c648e3e21884f0ee55cf4dccf0.crt'),
+    key: fs.readFileSync('/home/ezemscok/ssl/key/baa55_5242b_bf8e9894422095c536bee80d3142b0db.key')
+  });
+} catch (err) {
+  console.error('Failed to load SSL files:', err);
+  process.exit(1);  // Exit if SSL files cannot be loaded
+}
 
-    // Function to play the notification sound
-    function playNotificationSound() {
-        sound.play();
+// Error handling for the server
+server.on('error', (err) => {
+  console.error('Server error:', err);
+});
+
+// Create a WebSocket server on the HTTPS server
+const wss = new WebSocket.Server({ server });
+
+// Error handling for the WebSocket server
+wss.on('error', (err) => {
+  console.error('WebSocket server error:', err);
+});
+
+// Store connected clients and their associated room IDs
+const clients = new Map();
+
+// Handle new client connections
+wss.on('connection', (ws) => {
+  console.log('New client connected');
+
+  // Handle incoming messages from clients
+  ws.on('message', (message) => {
+    console.log('Received:', message);  // Print the received message
+
+    let data;
+    try {
+      data = JSON.parse(message);
+      console.log('Parsed message data:', data);  // Print the parsed data
+    } catch (err) {
+      console.error('Invalid message format:', message);
+      return;
     }
 
-    ws.onopen = function() {
-        console.log('WebSocket connection established');
-        ws.send(JSON.stringify({ type: 'join', room_id: roomSelect.value }));
-    };
-
-    ws.onmessage = function(event) {
-        const data = JSON.parse(event.data);
-        if (data.type === 'message' && data.room_id === roomSelect.value) {
-            const messageElement = createMessageElement(data);
-            chatBox.appendChild(messageElement);
-            chatBox.scrollTop = chatBox.scrollHeight;
-
-            // Play notification sound when a new message is received
-            playNotificationSound();
-        } else if (data.type === 'delete' && data.room_id === roomSelect.value) {
-            removeMessageElement(data.message_id);
-        } else if (data.type === 'audio' && data.room_id === roomSelect.value) {
-            const audioElement = createAudioElement(data);
-            chatBox.appendChild(audioElement);
-            chatBox.scrollTop = chatBox.scrollHeight;
-        }
-    };
-
-    messageForm.addEventListener("submit", function(e) {
-        e.preventDefault();
-
-        const messageInput = document.getElementById("message");
-        const message = messageInput.value;
-        const roomId = roomSelect.value;
-
-        fetch('messages.php', { // Ensure the correct path to messages.php
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({ action: 'send', message: message, room_id: roomId })
-        })
-        .then(response => response.json())
-        .then(data => {
-            if (data.success) {
-                messageInput.value = '';
-                const messageElement = createMessageElement({
-                    type: 'message',
-                    username: data.username, // Make sure 'username' is included in the response
-                    message: message,
-                    room_id: roomId,
-                    user_id: userId,
-                    message_id: data.message_id,
-                    photo: data.photo // Add the photo URL
-                });
-                chatBox.appendChild(messageElement);
-                chatBox.scrollTop = chatBox.scrollHeight;
-
-                ws.send(JSON.stringify({
-                    type: 'message',
-                    username: data.username,
-                    message: message,
-                    room_id: roomId,
-                    message_id: data.message_id,
-                    photo: data.photo // Send the photo URL via WebSocket
-                }));
-            } else {
-                console.error('Error:', data.error);
-            }
-        })
-        .catch(error => {
-            console.error('Error:', error);
-        });
-    });
-
-    recordButton.addEventListener("click", function() {
-        if (mediaRecorder && mediaRecorder.state === "recording") {
-            mediaRecorder.stop();
-            recordButton.textContent = "Start Recording";
-        } else {
-            startRecording();
-            recordButton.textContent = "Stop Recording";
-        }
-    });
-
-    function startRecording() {
-        navigator.mediaDevices.getUserMedia({ audio: true })
-            .then(stream => {
-                mediaRecorder = new MediaRecorder(stream);
-                mediaRecorder.start();
-
-                mediaRecorder.ondataavailable = event => {
-                    audioChunks.push(event.data);
-                };
-
-                mediaRecorder.onstop = () => {
-                    const audioBlob = new Blob(audioChunks, { type: 'audio/wav' });
-                    audioChunks = [];
-                    sendAudioMessage(audioBlob);
-                };
-            })
-            .catch(error => {
-                console.error('Error accessing microphone:', error);
-            });
+    switch (data.type) {
+      case 'join':
+        // Store client and room ID in the map
+        clients.set(ws, data.room_id);
+        console.log(`Client joined room: ${data.room_id}`);
+        break;
+      case 'message':
+        console.log(`Broadcasting message in room ${data.room_id}: ${data.content}`);
+        // Broadcast message to all clients in the same room
+        broadcast(data, ws);
+        break;
+      case 'delete':
+        console.log(`Broadcasting delete in room ${data.room_id}`);
+        // Broadcast delete message to all clients in the same room
+        broadcastDelete(data, ws);
+        break;
+      case 'audio':
+        console.log(`Broadcasting audio in room ${data.room_id}`);
+        // Broadcast audio message to all clients in the same room
+        broadcastAudio(data, ws);
+        break;
+      default:
+        console.error('Unknown message type:', data.type);
     }
+  });
 
-    function sendAudioMessage(audioBlob) {
-        const roomId = roomSelect.value;
-        const formData = new FormData();
-        formData.append('audio', audioBlob);
-        formData.append('room_id', roomId);
+  // Handle client disconnections
+  ws.on('close', () => {
+    console.log('Client disconnected');
+    // Remove client from the map
+    clients.delete(ws);
+  });
+});
 
-        fetch('messages.php', { // Ensure the correct path to messages.php
-            method: 'POST',
-            body: formData
-        })
-        .then(response => response.json())
-        .then(data => {
-            if (data.success) {
-                const audioElement = createAudioElement({
-                    type: 'audio',
-                    username: data.username, // Make sure 'username' is included in the response
-                    audio_url: data.audio_url,
-                    room_id: roomId,
-                    user_id: userId,
-                    message_id: data.message_id,
-                    photo: data.photo // Add the photo URL
-                });
-                chatBox.appendChild(audioElement);
-                chatBox.scrollTop = chatBox.scrollHeight;
-
-                ws.send(JSON.stringify({
-                    type: 'audio',
-                    username: data.username,
-                    audio_url: data.audio_url,
-                    room_id: roomId,
-                    photo: data.photo // Send the photo URL via WebSocket
-                }));
-            } else {
-                console.error('Error:', data.error);
-            }
-        })
-        .catch(error => {
-            console.error('Error:', error);
-        });
+// Broadcast message to all clients in the same room except the sender
+function broadcast(data, sender) {
+  clients.forEach((roomId, client) => {
+    if (client !== sender && roomId === data.room_id) {
+      client.send(JSON.stringify(data));
+      console.log('Sent message to client:', data);
     }
+  });
+}
 
-    function createMessageElement(data) {
-        const messageElement = document.createElement('div');
-        messageElement.classList.add('message', data.user_id === userId ? 'sent' : 'received');
-        messageElement.dataset.messageId = data.message_id;
-
-        const photoElement = document.createElement('img');
-        photoElement.src = data.photo;
-        photoElement.alt = 'Photo';
-        photoElement.style.width = '30px';
-        photoElement.style.height = '30px';
-        photoElement.style.borderRadius = '50%';
-        messageElement.appendChild(photoElement);
-
-        const textElement = document.createElement('div');
-        textElement.classList.add('text');
-        textElement.textContent = `${data.username}: ${data.message}`;
-        messageElement.appendChild(textElement);
-
-        if (data.user_id === userId) {
-            const deleteButton = document.createElement('button');
-            deleteButton.classList.add('delete-button');
-            deleteButton.textContent = 'X';
-            deleteButton.onclick = () => {
-                deleteMessage(data.message_id);
-            };
-            messageElement.appendChild(deleteButton);
-        }
-
-        return messageElement;
+// Broadcast delete message to all clients in the same room
+function broadcastDelete(data, sender) {
+  clients.forEach((roomId, client) => {
+    if (roomId === data.room_id) {
+      client.send(JSON.stringify(data));
+      console.log('Sent delete message to client:', data);
     }
+  });
+}
 
-    function createAudioElement(data) {
-        const audioElement = document.createElement('div');
-        audioElement.classList.add('message', data.user_id === userId ? 'sent' : 'received');
-
-        const photoElement = document.createElement('img');
-        photoElement.src = data.photo;
-        photoElement.alt = 'Photo';
-        photoElement.style.width = '30px';
-        photoElement.style.height = '30px';
-        photoElement.style.borderRadius = '50%';
-        audioElement.appendChild(photoElement);
-
-        const audioPlayer = document.createElement('audio');
-        audioPlayer.controls = true;
-        audioPlayer.src = data.audio_url;
-        audioElement.appendChild(audioPlayer);
-
-        return audioElement;
+// Broadcast audio message to all clients in the same room
+function broadcastAudio(data, sender) {
+  clients.forEach((roomId, client) => {
+    if (roomId === data.room_id) {
+      client.send(JSON.stringify(data));
+      console.log('Sent audio message to client:', data);
     }
+  });
+}
 
-    function removeMessageElement(message_id) {
-        const messages = document.querySelectorAll('.message');
-        messages.forEach(messageElement => {
-            if (messageElement.dataset.messageId === message_id.toString()) {
-                messageElement.remove();
-            }
-        });
-    }
-
-    function deleteMessage(message_id) {
-        fetch('messages.php', { // Ensure the correct path to messages.php
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({ action: 'delete', message_id: message_id })
-        })
-        .then(response => response.json())
-        .then(data => {
-            if (data.success) {
-                ws.send(JSON.stringify({
-                    type: 'delete',
-                    room_id: roomSelect.value,
-                    message_id: message_id
-                }));
-            } else {
-                console.error('Error:', data.error);
-            }
-        })
-        .catch(error => {
-            console.error('Error:', error);
-        });
-    }
-
-    function fetchMessages(roomId) {
-        fetch(`../messages.php?room_id=${roomId}`) // Ensure the correct path to messages.php
-        .then(response => response.json())
-        .then(data => {
-            chatBox.innerHTML = '';
-            data.forEach(message => {
-                const messageElement = createMessageElement(message);
-                chatBox.appendChild(messageElement);
-            });
-            chatBox.scrollTop = chatBox.scrollHeight;
-        })
-        .catch(error => {
-            console.error('Error:', error);
-        });
-    }
-
-    function updateRoomList() {
-        fetch('rooms.php') // Ensure the correct path to rooms.php
-        .then(response => response.json())
-        .then(data => {
-            roomSelect.innerHTML = '';
-            data.forEach(room => {
-                const option = document.createElement('option');
-                option.value = room.id;
-                option.textContent = room.name;
-                roomSelect.appendChild(option);
-            });
-            fetchMessages(roomSelect.value);
-        })
-        .catch(error => {
-            console.error('Error:', error);
-        });
-    }
-
-    fetchMessages(roomSelect.value);
+// Start the server on port 443
+server.listen(443, () => {
+  console.log('WebSocket server is running on wss://healthtech.ezems.co.ke:443');
 });

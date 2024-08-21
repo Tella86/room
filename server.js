@@ -1,13 +1,13 @@
 const fs = require('fs');
 const https = require('https');
-const WebSocket = require('ws');  // Import WebSocket module
+const WebSocket = require('ws');
 
 // Load SSL certificate and key
 let server;
 try {
   server = https.createServer({
-    cert: fs.readFileSync('./ssl/cert/healthtech_ezems_co_ke_baa55_5242b_1731176486_c36e87c648e3e21884f0ee55cf4dccf0.crt'),
-    key: fs.readFileSync('./ssl/key/baa55_5242b_bf8e9894422095c536bee80d3142b0db.key')
+    cert: fs.readFileSync('/home/ezemscok/ssl/certs/healthtech_ezems_co_ke_9ccea_f5941_1731881759_873ed662eedf476d3dcac24949c4fd20'),
+    key: fs.readFileSync('/home/ezemscok/ssl/keys/9ccea_f5941_b5a97e6601a20c9fa3328cbf48e1f39b.key')
   });
 } catch (err) {
   console.error('Failed to load SSL files:', err);
@@ -110,6 +110,19 @@ function broadcastAudio(data, sender) {
     }
   });
 }
+
+// Graceful shutdown
+function shutdown() {
+  console.log('Shutting down server...');
+  wss.clients.forEach((client) => client.close());
+  server.close(() => {
+    console.log('Server closed');
+    process.exit(0);
+  });
+}
+
+process.on('SIGINT', shutdown);
+process.on('SIGTERM', shutdown);
 
 // Start the server on port 443
 server.listen(443, () => {
